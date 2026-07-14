@@ -1,0 +1,60 @@
+# Configuração de regras — editável sem recompilar o motor.
+# Códigos de conta e padrões de nome de acumulador ficam aqui, não hardcoded.
+
+tolerancia_centavos: 0  # 0 = igualdade exata (Decimal). >0 = tolerância em centavos.
+
+severidade_natureza_invertida: critico  # "impeditivo" | "critico" — decisão: critico (caixa credor não deve travar o dia a dia)
+
+folha:
+  conta_gatilho: 331  # Salários e Ordenados — movimento aqui infere "houve folha no período"
+  contas_integralizacao:
+    - {codigo: 178, descricao: "IRRF a Recolher"}
+    - {codigo: 187, descricao: "Salários e Ordenados a Pagar"}
+    - {codigo: 191, descricao: "INSS a Recolher"}
+    - {codigo: 192, descricao: "FGTS a Recolher"}
+    - {codigo: 194, descricao: "Provisões para Férias"}
+    - {codigo: 195, descricao: "Provisões para 13º Salário"}
+    - {codigo: 198, descricao: "FGTS sobre Provisões para Férias"}
+    - {codigo: 199, descricao: "FGTS sobre Provisões para 13º"}
+  contas_pagamento: [178, 187, 191, 192]  # comparam débito contra saldo_anterior (P7.FOLHA_PAGAMENTO)
+
+amarracao:
+  filtro_ignorar: ["outras"]  # substring (normalizado) que remove acumulador de qualquer soma/relatório
+
+  p3_servico:
+    padrao_conta_balancete: "servico prestado"
+
+  p4_tomados:
+    padrao_acumulador: "servicos tomados"
+    conta_balancete: 325
+    descricao_conta: "Serviços Prestados por Terceiros"
+
+  p4_combustivel:
+    padrao_acumulador: "compra de combustivel"
+    conta_balancete: 292
+    descricao_conta: "Combustível"
+
+  p4_consumo:
+    padrao_acumulador: "uso e consumo"
+    conta_balancete: 58
+    descricao_conta: "Outros Materiais de Consumo"
+
+  p4_revenda:
+    padrao_acumulador: "compra de mercadoria"
+    padrao_excluir: "uso e consumo"
+    conta_balancete: 55
+    descricao_conta: "Outras Mercadorias para Revenda"
+
+  p5_venda:
+    padrao_acumulador: "venda"
+    conta_balancete: 408
+    descricao_conta: "Venda de Mercadorias"
+
+tributos:
+  simples_nacional:
+    conta: 479
+
+consistencia:
+  receita_custo:
+    intervalo_receita: [402, 412]
+    intervalo_custo: [292, 500]  # decisão: inclui 292 (Combustível) — único custo real nos exemplos
