@@ -5,17 +5,20 @@ from decimal import Decimal
 from dominio.apontamento import Apontamento, Severidade
 from dominio.modelos import Acumulador, Contexto, ContaBalancete
 from dominio.regras.base import Regra
-from dominio.regras._util import contem
+from dominio.regras._util import contem, ignorado, tolerancia as _tolerancia
 
 
-def _tolerancia(ctx: Contexto) -> Decimal:
-    centavos = ctx.config.get("tolerancia_centavos", 0)
-    return Decimal(centavos) / Decimal(100)
-
-
-def _ignorado(ac: Acumulador, ctx: Contexto) -> bool:
-    padroes = ctx.config.get("amarracao", {}).get("filtro_ignorar", ["outras"])
-    return any(contem(ac.descricao, p) for p in padroes)
+def _localizar_conta(ctx: Contexto, codigo_conta: int, padrao_balancete: str) -> ContaBalancete | None:
+    """Código exato primeiro; se não bater (numeração de plano de contas varia por
+    cliente), cai para substring normalizado na descrição. padrao_balancete deve ser
+    uma raiz curta (ex.: "combust"), não o rótulo completo — "Combustível" (singular)
+    não é substring de "COMBUSTÍVEIS E ENERGIA ELÉTRICA" (plural irregular -vel/-veis
+    não é sufixo simples), mas "combust" casa com ambos. Sem isso, conta que existe
+    vira falso "não encontrada"."""
+    conta = ctx.balancete.por_codigo(codigo_conta)
+    if conta is not None:
+        return conta
+    return next((c for c in ctx.balancete.contas if contem(c.descricao, padrao_balancete)), None)
 
 
 def _somar_por_padrao(
@@ -25,7 +28,7 @@ def _somar_por_padrao(
     total = Decimal("0")
     casados: list[Acumulador] = []
     for ac in acumuladores:
-        if ctx.foi_consumido(ac) or _ignorado(ac, ctx):
+        if ctx.foi_consumido(ac) or ignorado(ac, ctx):
             continue
         if not contem(ac.descricao, padrao):
             continue
@@ -94,9 +97,14 @@ class P3Servico(Regra):
     def avaliar(self, ctx: Contexto) -> list[Apontamento]:
         cfg = ctx.config.get("amarracao", {}).get("p3_servico", {})
         padrao = cfg.get("padrao_conta_balancete", "servico prestado")
+        padrao_excluir = cfg.get("padrao_excluir", "terceiros")
         valor_fiscal = ctx.fiscal.total_servicos or Decimal("0")
 
-        conta = next((c for c in ctx.balancete.contas if contem(c.descricao, padrao)), None)
+        conta = next(
+            (c for c in ctx.balancete.contas
+             if contem(c.descricao, padrao) and not contem(c.descricao, padrao_excluir)),
+            None,
+        )
         ap = _comparar(
             regra_id=self.id, valor_fiscal=valor_fiscal, conta=conta,
             coluna_esperada="CREDITO", ctx=ctx, descricao_conta="Serviço Prestado",
@@ -116,12 +124,13 @@ class P4Tomados(Regra):
         padrao = cfg.get("padrao_acumulador", "servicos tomados")
         codigo_conta = cfg.get("conta_balancete", 325)
         descricao_conta = cfg.get("descricao_conta", "Serviços Prestados por Terceiros")
+        padrao_balancete = cfg.get("padrao_conta_balancete", descricao_conta)
 
         total, casados = _somar_por_padrao(ctx.fiscal.entradas, padrao, ctx)
         for ac in casados:
             ctx.marcar_consumido(ac)
 
-        conta = ctx.balancete.por_codigo(codigo_conta)
+        conta = _localizar_conta(ctx, codigo_conta, padrao_balancete)
         ap = _comparar(
             regra_id=self.id, valor_fiscal=total, conta=conta,
             coluna_esperada="DEBITO", ctx=ctx, descricao_conta=descricao_conta,
@@ -139,12 +148,13 @@ class P4Combustivel(Regra):
         padrao = cfg.get("padrao_acumulador", "compra de combustivel")
         codigo_conta = cfg.get("conta_balancete", 292)
         descricao_conta = cfg.get("descricao_conta", "Combustível")
+        padrao_balancete = cfg.get("padrao_conta_balancete", descricao_conta)
 
         total, casados = _somar_por_padrao(ctx.fiscal.entradas, padrao, ctx)
         for ac in casados:
             ctx.marcar_consumido(ac)
 
-        conta = ctx.balancete.por_codigo(codigo_conta)
+        conta = _localizar_conta(ctx, codigo_conta, padrao_balancete)
         ap = _comparar(
             regra_id=self.id, valor_fiscal=total, conta=conta,
             coluna_esperada="DEBITO", ctx=ctx, descricao_conta=descricao_conta,
@@ -162,12 +172,13 @@ class P4Consumo(Regra):
         padrao = cfg.get("padrao_acumulador", "uso e consumo")
         codigo_conta = cfg.get("conta_balancete", 58)
         descricao_conta = cfg.get("descricao_conta", "Outros Materiais de Consumo")
+        padrao_balancete = cfg.get("padrao_conta_balancete", descricao_conta)
 
         total, casados = _somar_por_padrao(ctx.fiscal.entradas, padrao, ctx)
         for ac in casados:
             ctx.marcar_consumido(ac)
 
-        conta = ctx.balancete.por_codigo(codigo_conta)
+        conta = _localizar_conta(ctx, codigo_conta, padrao_balancete)
         ap = _comparar(
             regra_id=self.id, valor_fiscal=total, conta=conta,
             coluna_esperada="DEBITO", ctx=ctx, descricao_conta=descricao_conta,
@@ -189,12 +200,13 @@ class P4Revenda(Regra):
         padrao_excluir = cfg.get("padrao_excluir", "uso e consumo")
         codigo_conta = cfg.get("conta_balancete", 55)
         descricao_conta = cfg.get("descricao_conta", "Outras Mercadorias para Revenda")
+        padrao_balancete = cfg.get("padrao_conta_balancete", descricao_conta)
 
         total, casados = _somar_por_padrao(ctx.fiscal.entradas, padrao, ctx, excluir=padrao_excluir)
         for ac in casados:
             ctx.marcar_consumido(ac)
 
-        conta = ctx.balancete.por_codigo(codigo_conta)
+        conta = _localizar_conta(ctx, codigo_conta, padrao_balancete)
         ap = _comparar(
             regra_id=self.id, valor_fiscal=total, conta=conta,
             coluna_esperada="DEBITO", ctx=ctx, descricao_conta=descricao_conta,
@@ -212,12 +224,13 @@ class P5Venda(Regra):
         padrao = cfg.get("padrao_acumulador", "venda")
         codigo_conta = cfg.get("conta_balancete", 408)
         descricao_conta = cfg.get("descricao_conta", "Venda de Mercadorias")
+        padrao_balancete = cfg.get("padrao_conta_balancete", descricao_conta)
 
         total, casados = _somar_por_padrao(ctx.fiscal.saidas, padrao, ctx)
         for ac in casados:
             ctx.marcar_consumido(ac)
 
-        conta = ctx.balancete.por_codigo(codigo_conta)
+        conta = _localizar_conta(ctx, codigo_conta, padrao_balancete)
         ap = _comparar(
             regra_id=self.id, valor_fiscal=total, conta=conta,
             coluna_esperada="CREDITO", ctx=ctx, descricao_conta=descricao_conta,

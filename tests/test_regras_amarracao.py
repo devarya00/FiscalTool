@@ -22,6 +22,24 @@ def test_p3_servico_bate_na_conta_por_nome(config):
     assert aps[0].severidade is Severidade.OK
 
 
+def test_p3_servico_nao_confunde_com_servicos_tomados_por_terceiros(config):
+    """Caso real (Balancete jovane.pdf): 'SERVIÇOS PRESTADOS POR TERCEIROS' (325,
+    despesa) aparece na lista ANTES de 'SERVIÇOS PRESTADOS' (411, receita). Sem
+    excluir 'terceiros', P3.SERV pega a 325 por ser a primeira a casar 'prestad'
+    — conta errada, resultado errado. P4.TOMADOS é quem deve olhar a 325."""
+    servicos = [acumulador("900", "PRESTAÇÃO DE SERVIÇOS", "37600.00", Secao.SERVICOS)]
+    fiscal_ = fiscal(servicos=servicos, total_servicos="37600.00")
+    contas = [
+        conta(325, "SERVIÇOS PRESTADOS POR TERCEIROS", Grupo.RESULTADO, debito="960.00"),
+        conta(411, "SERVIÇOS PRESTADOS", Grupo.RESULTADO, credito="37600.00"),
+    ]
+    ctx = contexto(fiscal_, balancete(contas=contas), config)
+
+    aps = [a for a in _motor().executar(ctx) if a.regra == "P3.SERV"]
+    assert aps[0].severidade is Severidade.OK
+    assert "conta 411" in aps[0].descricao
+
+
 def test_p3_servico_coluna_errada(config):
     fiscal_ = fiscal(servicos=[], total_servicos="500.00")
     contas = [conta(601, "SERVIÇO PRESTADO", Grupo.RESULTADO, debito="500.00", credito="0")]
@@ -82,6 +100,45 @@ def test_conta_ausente_com_valor_fiscal_e_critico(config):
     aps = [a for a in _motor().executar(ctx) if a.regra == "P4.COMB"]
     assert aps[0].severidade is Severidade.CRITICO
     assert "não encontrada" in aps[0].descricao
+
+
+def test_p4_comb_casa_conta_por_substring_quando_codigo_nao_bate(config):
+    """Plano de contas do cliente numera diferente do configurado (292): a conta
+    existe mas sob outro código. Índice normalizado por descrição resolve —
+    'Combustível' casa com 'DESPESA COM COMBUSTÍVEL'."""
+    entradas = [acumulador("41", "COMPRA COMBUSTIVEL A PRAZO", "150.00", Secao.ENTRADAS)]
+    contas = [conta(9001, "DESPESA COM COMBUSTIVEL", Grupo.ATIVO, debito="150.00")]
+    ctx = contexto(fiscal(entradas=entradas), balancete(contas=contas), config)
+
+    aps = [a for a in _motor().executar(ctx) if a.regra == "P4.COMB"]
+    assert aps[0].severidade is Severidade.OK
+
+
+def test_p4_tomados_conta_existente_com_codigo_diferente_vira_divergencia_de_valor(config):
+    """Conta existe (960,00) sob código diferente do configurado (325); resolvida
+    por substring. Achado real é divergência de valor, não 'conta não encontrada'."""
+    entradas = [acumulador("50", "SERVICOS TOMADOS COM RETENCAO", "10960.00", Secao.ENTRADAS)]
+    contas = [conta(9002, "Serviços Prestados por Terceiros", Grupo.ATIVO, debito="960.00")]
+    ctx = contexto(fiscal(entradas=entradas), balancete(contas=contas), config)
+
+    aps = [a for a in _motor().executar(ctx) if a.regra == "P4.TOMADOS"]
+    assert len(aps) == 1
+    assert aps[0].severidade is Severidade.CRITICO
+    assert "divergência de valor" in aps[0].descricao
+    assert aps[0].diferenca == Decimal("10000.00")
+
+
+def test_p4_comb_casa_plural_irregular_da_conta_real(config):
+    """Caso real (Balancete jovane.pdf): plano de contas usa código 290, não o 292
+    configurado, e descrição no PLURAL 'COMBUSTÍVEIS E ENERGIA ELÉTRICA'. 'Combustível'
+    singular não é substring de 'combustiveis' (plural -vel/-veis não é sufixo simples)
+    — por isso o padrão de matching usa a raiz 'combust', não o rótulo completo."""
+    entradas = [acumulador("41", "COMPRA COMBUSTIVEL A PRAZO", "54932.11", Secao.ENTRADAS)]
+    contas = [conta(290, "COMBUSTÍVEIS E ENERGIA ELÉTRICA", Grupo.RESULTADO, debito="54932.11")]
+    ctx = contexto(fiscal(entradas=entradas), balancete(contas=contas), config)
+
+    aps = [a for a in _motor().executar(ctx) if a.regra == "P4.COMB"]
+    assert aps[0].severidade is Severidade.OK
 
 
 def test_acumulador_nao_mapeado_vira_orfao(config):

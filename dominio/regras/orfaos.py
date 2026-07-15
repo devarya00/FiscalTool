@@ -24,8 +24,8 @@ class P6Orfaos(Regra):
             resultados.append(Apontamento(
                 regra=self.id, severidade=Severidade.ALERTA,
                 descricao=(
-                    f"Acumulador {ac.codigo} ({ac.descricao}), seção {ac.secao.value}, "
-                    f"não mapeado por nenhuma regra"
+                    f"AC {ac.codigo} Não encontrado — {ac.descricao} "
+                    f"(seção {ac.secao.value}), sem vínculo contábil configurado"
                 ),
                 valor_fiscal=ac.valor_contabil,
                 origem_fiscal=ac.referencia,

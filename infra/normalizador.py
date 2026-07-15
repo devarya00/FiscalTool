@@ -11,6 +11,13 @@ _PERIODO_RE = re.compile(r"(\d{2}/\d{2}/\d{4}).{0,12}?(\d{2}/\d{2}/\d{4})")
 _CNPJ_RE = re.compile(r"\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}")
 
 
+def formatar_decimal(valor: Decimal) -> str:
+    """Decimal('4558431.00') -> '4.558.431,00' — inverso de to_decimal, mesmo
+    formato dos PDFs de origem (milhar com ponto, decimal com vírgula)."""
+    texto = f"{valor:,.2f}"  # '4,558,431.00' (agrupamento US)
+    return texto.replace(",", "_").replace(".", ",").replace("_", ".")
+
+
 def to_decimal(txt: str) -> Decimal:
     """'102.551,92' -> Decimal('102551.92'). Aceita sufixo D/C, que é descartado."""
     limpo = txt.strip().rstrip("DCdc").strip()
@@ -46,10 +53,16 @@ def extrair_cnpj(texto: str) -> str | None:
 
 
 def parse_periodo(txt: str) -> Periodo:
-    m = _PERIODO_RE.search(txt)
-    if not m:
+    """PDF pode conter vários balancetes mensais concatenados, cada um com sua
+    própria linha 'Período: X - Y' (ex.: jan, fev, ..., dez). Pegar só a
+    primeira ocorrência (.search) trava a conferência no mês mais antigo — usa
+    a cobertura total (menor início, maior fim) entre todas as ocorrências."""
+    matches = list(_PERIODO_RE.finditer(txt))
+    if not matches:
         raise ValueError(f"Período não encontrado em: {txt!r}")
-    return Periodo(_parse_data(m.group(1)), _parse_data(m.group(2)))
+    inicios = [_parse_data(m.group(1)) for m in matches]
+    fins = [_parse_data(m.group(2)) for m in matches]
+    return Periodo(min(inicios), max(fins))
 
 
 def _parse_data(txt: str) -> date:

@@ -1,10 +1,13 @@
-"""Persistência SQLite local — histórico de conferências por CNPJ/período.
+"""Persistência SQLite local — histórico de conferências por CNPJ/período e
+vínculos de amarração aprendidos por cliente (grupos_amarracao configurados
+via UI em vez de regras.yaml).
 
 Depende só do domínio (Apontamento, Periodo), nunca da camada de aplicação —
 mantém a regra de dependência da arquitetura (infra não conhece camadas acima).
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime
 from decimal import Decimal
@@ -39,6 +42,17 @@ CREATE TABLE IF NOT EXISTS apontamentos (
 );
 
 CREATE INDEX IF NOT EXISTS idx_conferencias_cnpj ON conferencias(cnpj);
+
+CREATE TABLE IF NOT EXISTS vinculos_acumulador (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cnpj TEXT NOT NULL,
+    codigo_acumulador TEXT NOT NULL,
+    descricao TEXT,
+    contas_contabeis TEXT NOT NULL,  -- JSON: lista de códigos de conta (int)
+    coluna TEXT NOT NULL,            -- "DEBITO" | "CREDITO"
+    criado_em TEXT NOT NULL,
+    UNIQUE(cnpj, codigo_acumulador)
+);
 """
 
 
@@ -82,6 +96,48 @@ class Repositorio:
         )
         self._conn.commit()
         return conferencia_id
+
+    def salvar_vinculo(
+        self, cnpj: str, codigo_acumulador: str, contas_contabeis: list[int],
+        coluna: str, descricao: str = "",
+    ) -> None:
+        """Aprende (ou atualiza) o vínculo de um acumulador órfão para este
+        cliente — reaproveitado automaticamente nas próximas conferências
+        (ver ConferenciaService), sem precisar editar regras.yaml."""
+        self._conn.execute(
+            "INSERT INTO vinculos_acumulador "
+            "(cnpj, codigo_acumulador, descricao, contas_contabeis, coluna, criado_em) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(cnpj, codigo_acumulador) DO UPDATE SET "
+            "descricao=excluded.descricao, contas_contabeis=excluded.contas_contabeis, "
+            "coluna=excluded.coluna, criado_em=excluded.criado_em",
+            (
+                cnpj, codigo_acumulador, descricao, json.dumps(contas_contabeis),
+                coluna, datetime.now().isoformat(),
+            ),
+        )
+        self._conn.commit()
+
+    def vinculos_do_cliente(self, cnpj: str) -> list[dict]:
+        """Vínculos aprendidos no formato de entrada de config/regras.yaml
+        (grupos_amarracao) — ConferenciaService só precisa concatenar na lista
+        vinda do YAML, o motor de regras (P4.GRUPO) não distingue a origem."""
+        linhas = self._conn.execute(
+            "SELECT codigo_acumulador, descricao, contas_contabeis, coluna "
+            "FROM vinculos_acumulador WHERE cnpj = ?",
+            (cnpj,),
+        ).fetchall()
+        return [
+            {
+                "id": f"G.VINCULO.{linha['codigo_acumulador']}",
+                "descricao": linha["descricao"] or f"Vínculo aprendido — AC {linha['codigo_acumulador']}",
+                "codigos_fiscais": [linha["codigo_acumulador"]],
+                "contas_contabeis": json.loads(linha["contas_contabeis"]),
+                "coluna": linha["coluna"],
+                "modo": "soma",
+            }
+            for linha in linhas
+        ]
 
     def historico(self, cnpj: str) -> list[sqlite3.Row]:
         return self._conn.execute(

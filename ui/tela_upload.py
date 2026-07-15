@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import tempfile
+from pathlib import Path
+
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QFileDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
+    QCheckBox, QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget,
 )
+
+from infra.sanitize_pdf import GhostscriptError, sanitize_pdf
 
 
 class TelaUpload(QWidget):
@@ -21,6 +26,13 @@ class TelaUpload(QWidget):
         ))
         layout.addWidget(self._linha_arquivo(
             "Balancete (Contábil):", self._selecionar_balancete, "_label_balancete",
+        ))
+
+        self._checkbox_sanitizar = QCheckBox("Sanitizar PDFs com Ghostscript antes de conferir")
+        layout.addWidget(self._checkbox_sanitizar)
+        layout.addWidget(QLabel(
+            "Reconstrói o PDF para corrigir colunas coladas e linhas fantasma antes da "
+            "extração. Se o Ghostscript falhar, segue com o PDF original (não trava)."
         ))
 
         self._checkbox_folha = QCheckBox("Houve folha de pagamento no período (override manual)")
@@ -65,10 +77,26 @@ class TelaUpload(QWidget):
     def _atualizar_botao(self) -> None:
         self._botao_conferir.setEnabled(bool(self._caminho_fiscal and self._caminho_balancete))
 
+    def _sanitizar_se_solicitado(self, caminho: str) -> str:
+        if not self._checkbox_sanitizar.isChecked():
+            return caminho
+        destino = Path(tempfile.gettempdir()) / f"sanitizado_{Path(caminho).stem}.pdf"
+        try:
+            return str(sanitize_pdf(caminho, destino))
+        except GhostscriptError as exc:
+            QMessageBox.warning(
+                self, "Sanitização falhou",
+                f"Ghostscript indisponível ou falhou — seguindo com o PDF original.\n\n{exc}",
+            )
+            return caminho
+
     def _conferir(self) -> None:
         estado = self._checkbox_folha.checkState()
         if estado.name == "PartiallyChecked":
             override = None
         else:
             override = estado.name == "Checked"
-        self.conferir_solicitado.emit(self._caminho_fiscal, self._caminho_balancete, override)
+
+        caminho_fiscal = self._sanitizar_se_solicitado(self._caminho_fiscal)
+        caminho_balancete = self._sanitizar_se_solicitado(self._caminho_balancete)
+        self.conferir_solicitado.emit(caminho_fiscal, caminho_balancete, override)

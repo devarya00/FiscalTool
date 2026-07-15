@@ -42,6 +42,8 @@ def _escrever_bloco(ws: Worksheet, apontamentos: list[Apontamento]) -> None:
         cor = _COR_SEVERIDADE.get(ap.severidade)
         if cor:
             ws.cell(row=ws.max_row, column=2).fill = PatternFill("solid", fgColor=cor)
+        for coluna in (4, 5, 6):  # Valor Fiscal, Valor Contábil, Diferença
+            ws.cell(row=ws.max_row, column=coluna).number_format = "#,##0.00"
 
     for coluna in ws.columns:
         largura = max(len(str(c.value)) if c.value is not None else 0 for c in coluna) + 2

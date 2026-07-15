@@ -4,6 +4,7 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QTableWidget, QTableWidgetItem
 
 from dominio.apontamento import Apontamento, Severidade
+from infra.normalizador import formatar_decimal
 
 _COR_SEVERIDADE = {
     Severidade.IMPEDITIVO: QColor("#7a0000"),
@@ -29,17 +30,25 @@ class TabelaApontamentos(QTableWidget):
         self.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.horizontalHeader().setStretchLastSection(False)
+        self._apontamentos: list[Apontamento] = []
+
+    def apontamento_selecionado(self) -> Apontamento | None:
+        linha = self.currentRow()
+        if 0 <= linha < len(self._apontamentos):
+            return self._apontamentos[linha]
+        return None
 
     def carregar(self, apontamentos: list[Apontamento]) -> None:
+        self._apontamentos = list(apontamentos)
         self.setRowCount(len(apontamentos))
         for row, ap in enumerate(apontamentos):
             valores = [
                 ap.regra,
                 ap.severidade.value.upper(),
                 ap.descricao,
-                f"{ap.valor_fiscal:.2f}" if ap.valor_fiscal is not None else "",
-                f"{ap.valor_contabil:.2f}" if ap.valor_contabil is not None else "",
-                f"{ap.diferenca:.2f}" if ap.diferenca is not None else "",
+                formatar_decimal(ap.valor_fiscal) if ap.valor_fiscal is not None else "",
+                formatar_decimal(ap.valor_contabil) if ap.valor_contabil is not None else "",
+                formatar_decimal(ap.diferenca) if ap.diferenca is not None else "",
                 ap.coluna_esperada or "",
                 ap.coluna_encontrada or "",
             ]

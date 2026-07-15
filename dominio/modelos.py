@@ -97,6 +97,7 @@ class Balancete:
     cnpj: str
     periodo: Periodo
     contas: list[ContaBalancete]
+    parsing_incerto: bool = False  # True: fallback de IA não confirmou o resultado — conferir manualmente
 
     def por_codigo(self, cod: int) -> ContaBalancete | None:
         for conta in self.contas:

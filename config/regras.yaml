@@ -5,6 +5,39 @@ tolerancia_centavos: 0  # 0 = igualdade exata (Decimal). >0 = tolerância em cen
 
 severidade_natureza_invertida: critico  # "impeditivo" | "critico" — decisão: critico (caixa credor não deve travar o dia a dia)
 
+natureza:
+  # contas retificadoras: natureza esperada é a INVERSA do grupo (estrutural/cadastral).
+  # sem isso, toda depreciação acumulada / provisão para perdas vira falso positivo em P2.NATUREZA.
+  retificadoras:
+    - "(-)"
+    - "depreciacao acumulada"
+    - "amortizacao acumulada"
+    - "exaustao acumulada"
+    - "provisao para devedores duvidosos"
+    - "provisao para creditos de liquidacao duvidosa"
+    - "provisao para perdas"
+  # saldo credor em caixa/banco não é erro cadastral — é anomalia financeira.
+  # cai em P2.SALDO_ANOMALO com mensagem de investigação, não "natureza incorreta".
+  # "disponivel" cobre o grupo (conta-título, ex.: "3 DISPONÍVEL") além das
+  # contas-filha (ex.: "5 CAIXA GERAL") — sem isso as duas viram tratamentos diferentes
+  # para o mesmo dinheiro.
+  saldo_anomalo:
+    - "caixa"
+    - "disponivel"
+    - "banco"
+    - "bancos"
+    - "aplicacao financeira"
+    - "aplicacoes financeiras"
+
+  # abaixo deste valor (R$), a anomalia de natureza é ruído (arredondamento/estorno),
+  # não crítico — vira ALERTA independente da severidade configurada acima.
+  limiar_materialidade: 10
+
+ia_fallback:
+  ativo: false  # opt-in — requer servidor Ollama rodando em localhost:11434 (não incluso no .exe)
+  modelo: "qwen2.5vl:7b"  # nome real no Ollama Library é sem hífen (doc original grafou "qwen2.5-vl")
+  host: "http://localhost:11434"
+
 folha:
   conta_gatilho: 331  # Salários e Ordenados — movimento aqui infere "houve folha no período"
   contas_integralizacao:
@@ -23,6 +56,10 @@ amarracao:
 
   p3_servico:
     padrao_conta_balancete: "prestad"  # cobre "SERVIÇO(S) PRESTADO(S)" — singular/plural real varia por cliente
+    # sem isto, "prestad" casa tanto "SERVIÇOS PRESTADOS" (receita, P3) quanto
+    # "SERVIÇOS PRESTADOS POR TERCEIROS" (despesa, P4.TOMADOS) — a que vier
+    # primeiro na lista do balancete vence e pode roubar a conta errada.
+    padrao_excluir: "terceiros"
 
   p4_tomados:
     padrao_acumulador: "servicos tomados"
@@ -32,6 +69,9 @@ amarracao:
   p4_combustivel:
     padrao_acumulador: "combustivel"  # relatório real usa "COMPRA COMBUSTIVEL A PRAZO", sem "DE"
     conta_balancete: 292
+    # raiz curta, não "combustível": plano de contas real usa "COMBUSTÍVEIS E ENERGIA
+    # ELÉTRICA" — plural (-vel/-veis) não é substring de "combustivel" singular.
+    padrao_conta_balancete: "combust"
     descricao_conta: "Combustível"
 
   p4_consumo:
@@ -58,3 +98,42 @@ consistencia:
   receita_custo:
     intervalo_receita: [402, 412]
     intervalo_custo: [292, 500]  # decisão: inclui 292 (Combustível) — único custo real nos exemplos
+
+# Amarração N-para-N: soma de N acumuladores fiscais contra soma de N contas
+# contábeis (ou busca por valor num intervalo de contas). Cada entrada vira um
+# apontamento próprio no relatório, com "id" como regra. Vínculos aprendidos
+# pela tela "Não Mapeados" (persistidos por CNPJ no SQLite) entram aqui em
+# tempo de execução, com o mesmo formato — não precisam de código novo.
+grupos_amarracao:
+  - id: "G.FRETE"
+    descricao: "Frete"
+    codigos_fiscais: [300]
+    contas_contabeis: [688]
+    coluna: "DEBITO"
+    modo: "soma"  # soma acumuladores do grupo == soma das contas do grupo
+
+  - id: "G.IMOBILIZADO"
+    descricao: "Imobilizado (aquisição a prazo)"
+    codigos_fiscais: [110]
+    escopo_contas: [111, 148]  # Ativo Não Circulante / Imobilizado — ajustar por cliente
+    coluna: "DEBITO"
+    modo: "busca_valor"  # não soma: procura QUALQUER conta no escopo com débito == valor da nota
+
+  - id: "G.IMPOSTOS"
+    descricao: "Impostos (saldo acumulado fiscal x crédito contábil)"
+    # TEMPLATE — sem código real validado ainda (ao contrário de Frete/Imobilizado
+    # acima). "codigos_fiscais" e "contas_contabeis" precisam ser calibrados por
+    # cliente antes de usar em produção: o código de acumulador de impostos e a(s)
+    # conta(s) de crédito de imposto variam por plano de contas.
+    codigos_fiscais: [900]
+    contas_contabeis: [479]
+    coluna: "CREDITO"
+    modo: "soma"
+
+# Auditoria de depreciação (§ hierárquica): toda conta de bem com saldo/movimento
+# no escopo deve ter uma conta de depreciação acumulada correspondente (fuzzy
+# match pelo nome do bem, ex.: "AMAROK" -> "(-) DEPRECIAÇÃO AMAROK") com crédito
+# lançado no período.
+depreciacao:
+  escopo_contas: [111, 148]  # mesmo escopo do Imobilizado — ajustar por cliente
+  limiar_fuzzy: 0.3  # 0-1; abaixo disso não considera par identificado (evita falso vínculo)

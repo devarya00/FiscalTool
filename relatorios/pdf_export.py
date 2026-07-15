@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+from xml.sax.saxutils import escape
+
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from aplicacao.conferencia_service import ResultadoConferencia
 from dominio.apontamento import Apontamento, Severidade
+from infra.normalizador import formatar_decimal
 
 _COR_SEVERIDADE = {
     Severidade.IMPEDITIVO: colors.HexColor("#7a0000"),
@@ -18,13 +21,17 @@ _COR_SEVERIDADE = {
 
 _CABECALHO_TABELA = ["Regra", "Status", "Descrição", "Vlr Fiscal", "Vlr Contábil", "Diferença"]
 
+_ESTILO_CELULA = ParagraphStyle("celula_tabela", fontName="Helvetica", fontSize=8, leading=10)
 
-def _linha(ap: Apontamento) -> list[str]:
+
+def _linha(ap: Apontamento) -> list:
+    # Descrição como Paragraph: string crua não quebra linha na largura da
+    # coluna, o texto vaza e sobrepõe a linha seguinte (célula não cresce).
     return [
-        ap.regra, ap.severidade.value.upper(), ap.descricao,
-        f"{ap.valor_fiscal:.2f}" if ap.valor_fiscal is not None else "",
-        f"{ap.valor_contabil:.2f}" if ap.valor_contabil is not None else "",
-        f"{ap.diferenca:.2f}" if ap.diferenca is not None else "",
+        ap.regra, ap.severidade.value.upper(), Paragraph(escape(ap.descricao), _ESTILO_CELULA),
+        formatar_decimal(ap.valor_fiscal) if ap.valor_fiscal is not None else "",
+        formatar_decimal(ap.valor_contabil) if ap.valor_contabil is not None else "",
+        formatar_decimal(ap.diferenca) if ap.diferenca is not None else "",
     ]
 
 
