@@ -22,7 +22,7 @@ amarracao:
   filtro_ignorar: ["outras"]  # substring (normalizado) que remove acumulador de qualquer soma/relatório
 
   p3_servico:
-    padrao_conta_balancete: "servico prestado"
+    padrao_conta_balancete: "prestad"  # cobre "SERVIÇO(S) PRESTADO(S)" — singular/plural real varia por cliente
 
   p4_tomados:
     padrao_acumulador: "servicos tomados"
@@ -30,7 +30,7 @@ amarracao:
     descricao_conta: "Serviços Prestados por Terceiros"
 
   p4_combustivel:
-    padrao_acumulador: "compra de combustivel"
+    padrao_acumulador: "combustivel"  # relatório real usa "COMPRA COMBUSTIVEL A PRAZO", sem "DE"
     conta_balancete: 292
     descricao_conta: "Combustível"
 

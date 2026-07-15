@@ -19,21 +19,26 @@ from infra.fiscal_parser import FiscalParser
 def _gerar_pdf_fiscal(caminho: Path) -> None:
     c = canvas.Canvas(str(caminho), pagesize=(600, 800))
     c.setFont("Courier", 10)
-    linhas = [
-        "CNPJ: 12.509.263/0001-00",
-        "Periodo: 01/11/2025 a 31/12/2025",
-        "ENTRADAS",
-        "107 COMPRA DE USO E CONSUMO A PRAZO 10.782,39",
-        "SAIDAS",
-        "401 VENDA DE MERCADORIAS 5.000,00",
-        "SERVICOS",
-        "900 PRESTACAO DE SERVICOS 500,00",
-        "TOTAL SERVICOS 500,00",
-    ]
-    y = 760
-    for linha in linhas:
-        c.drawString(50, y, linha)
-        y -= 20
+
+    c.drawString(50, 780, "CNPJ: 12.509.263/0001-00")
+    c.drawString(50, 765, "Periodo: 01/11/2025 a 31/12/2025")
+
+    # "Base ICMS/ISS" fica bem à direita — dá folga para a descrição mais
+    # longa + valor não vazarem para fora da "zona misturada" (mesmo formato
+    # do relatório real: Vlr Contábil / Base ICMS bem separados do código).
+    c.drawString(50, 740, "ENTRADAS")
+    c.drawString(50, 725, "Codigo Descricao Vlr Contabil" + " " * 40 + "Base ICMS")
+    c.drawString(50, 710, "107 COMPRA DE USO E CONSUMO A PRAZO 10.782,39")
+
+    c.drawString(50, 685, "SAIDAS")
+    c.drawString(50, 670, "Codigo Descricao Vlr Contabil" + " " * 40 + "Base ICMS")
+    c.drawString(50, 655, "401 VENDA DE MERCADORIAS 5.000,00")
+
+    c.drawString(50, 630, "SERVICOS")
+    c.drawString(50, 615, "Cod Descricao Vlr Contabil" + " " * 40 + "Base ISS")
+    c.drawString(50, 600, "900 PRESTACAO DE SERVICOS 500,00")
+    c.drawString(50, 585, "TOTAL SERVICOS 500,00")
+
     c.save()
 
 
@@ -66,21 +71,24 @@ def _gerar_pdf_balancete(caminho: Path) -> None:
     c.drawString(50, 780, "CNPJ: 12.509.263/0001-00  Periodo: 01/11/2025 a 31/12/2025")
 
     # Cabeçalho de colunas — faixas de X detectadas uma vez a partir daqui.
-    c.drawString(300, 740, "Saldo Anterior")
+    # Colunas espaçadas o suficiente para caber "999.999,99D" (11 chars) sem
+    # que o último caractere vaze para a faixa vizinha.
+    c.drawString(280, 740, "Saldo Anterior")
     c.drawString(400, 740, "Debito")
-    c.drawString(460, 740, "Credito")
-    c.drawString(520, 740, "Saldo Atual")
+    c.drawString(480, 740, "Credito")
+    c.drawString(560, 740, "Saldo Atual")
 
-    # Cabeçalho de grupo colado antes da linha da conta (caso real do doc, §5.1).
-    c.drawString(50, 700, "ATIVO CIRCULANTE")
+    # Cabeçalho de grupo — código próprio, sem linha textual separada (caso
+    # real do doc: "ATIVO"/"PASSIVO" são elas mesmas contas numeradas).
+    c.drawString(50, 700, "1 ATIVO")
 
     # Linha da conta — cada coluna numérica em drawString separado, na mesma
     # faixa de X do cabeçalho, simulando extract_words() por geometria.
     c.drawString(50, 680, "58 OUTROS MATERIAIS DE CONSUMO")
-    c.drawString(300, 680, "91.769,53D")
+    c.drawString(280, 680, "91.769,53D")
     c.drawString(400, 680, "10.782,39")
-    c.drawString(460, 680, "0,00")
-    c.drawString(520, 680, "102.551,92D")
+    c.drawString(480, 680, "0,00")
+    c.drawString(560, 680, "102.551,92D")
 
     c.save()
 

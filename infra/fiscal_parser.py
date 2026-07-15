@@ -71,13 +71,15 @@ class FiscalParser:
                         else:
                             break
 
-                    margem_esquerda = colunas_atuais[0] if colunas_atuais else 0.0
-                    chars_filtrados = [c for c in chars_linha if c["x0"] >= margem_esquerda]
-                    texto_linha = "".join(c["text"] for c in chars_filtrados).strip()
-                    if not texto_linha:
+                    # "Total:" costuma começar mais à esquerda que a coluna de
+                    # código (x0 perto de 0) — detecção de seção/total usa a
+                    # linha SEM o corte de margem, que só serve para descartar
+                    # anotações marginais na hora de extrair código/descrição.
+                    texto_linha_completo = "".join(c["text"] for c in chars_linha).strip()
+                    if not texto_linha_completo:
                         continue
 
-                    m_secao = _SECAO_RE.match(texto_linha)
+                    m_secao = _SECAO_RE.match(texto_linha_completo)
                     if m_secao:
                         secao_atual = _MAPA_SECAO[m_secao.group(1).lower()]
                         continue
@@ -85,13 +87,15 @@ class FiscalParser:
                     if secao_atual is None or colunas_atuais is None:
                         continue
 
-                    if _TOTAL_RE.match(texto_linha):
+                    if _TOTAL_RE.match(texto_linha_completo):
                         if secao_atual is Secao.SERVICOS:
-                            m_valor = _VALOR_RE.search(texto_linha)
+                            m_valor = _VALOR_RE.search(texto_linha_completo)
                             if m_valor:
                                 total_servicos = to_decimal(m_valor.group(0))
                         continue
 
+                    margem_esquerda = colunas_atuais[0]
+                    chars_filtrados = [c for c in chars_linha if c["x0"] >= margem_esquerda]
                     resultado = self._extrair_linha(chars_filtrados, colunas_atuais[1])
                     if resultado is None:
                         continue
